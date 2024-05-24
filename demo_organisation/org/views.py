@@ -144,29 +144,29 @@ class OrganisationViewSet(ModelViewSet):
         ],
     )
     def accept(self, request):
-        # with transaction.atomic():
-        #     key = request.query_params.get("key")
-        #     try:
-        #         decoded_key = jwt.decode(key, settings.SECRET_KEY, algorithms=["HS256"])
-        #     except Exception as e:
-        #         raise Response({"details" : str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        #     invite_obj = OrganizationInvitation.objects.filter(
-        #         id=decoded_key["invite"]
-        #     ).first()
+        with transaction.atomic():
+            key = request.query_params.get("key")
+            try:
+                decoded_key = jwt.decode(key, settings.SECRET_KEY, algorithms=["HS256"])
+            except Exception as e:
+                raise Response({"details" : str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            invite_obj = OrganizationInvitation.objects.filter(
+                id=decoded_key["invite"]
+            ).first()
 
-        #     if (
-        #         invite_obj is None
-        #         and OrganizationUser.objects.filter(
-        #             user=invite_obj.invitee.id,
-        #             organization_id=invite_obj.organization.id,
-        #         ).exists()
-        #     ):
-        #         return Response({"details": "Invalid invitation url"})
-        #     OrganizationUser.objects.create(
-        #         user=invite_obj.invitee, organization=invite_obj.organization
-        #     )
+            if (
+                invite_obj is None
+                and OrganizationUser.objects.filter(
+                    user=invite_obj.invitee.id,
+                    organization_id=invite_obj.organization.id,
+                ).exists()
+            ):
+                return Response({"details": "Invalid invitation url"})
+            OrganizationUser.objects.create(
+                user=invite_obj.invitee, organization=invite_obj.organization
+            )
         return Response(
-            {"details": str(request.META)}
+            {"details": "Invitation accepted successfully!!"}
         )
         
 class OrganizationUserViewset(ModelViewSet):
