@@ -1,0 +1,21 @@
+version: '3'
+
+services:
+  django:
+    build:
+      context: .
+      dockerfile: ./Dockerfile  # Path to your Dockerfile
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/code
+    ports:
+      - "8000:8000"
+    depends_on:
+      - mailhog
+  mailhog:
+    image: mailhog/mailhog
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+volumes:
+  sqlite_data:

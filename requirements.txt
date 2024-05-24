@@ -1,0 +1,13 @@
+Django==5.0.1
+django-environ==0.10.0
+django-allauth==0.63.1
+django-extensions==3.2.3
+drf-spectacular==0.27.1
+djangorestframework==3.14.0
+django-model-utils==4.3.1
+dj-rest-auth==6.0.0
+djangorestframework-simplejwt==5.3.1
+django-organizations==2.4.1
+django-cors-headers==3.14.0
+django-debug-toolbar==3.8.1
+requests==2.31.0
