@@ -22,6 +22,7 @@ from drf_spectacular.views import (
     SpectacularRedocView,
     SpectacularSwaggerView,
 )
+
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/auth/register/", include("dj_rest_auth.registration.urls")),

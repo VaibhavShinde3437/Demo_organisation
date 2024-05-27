@@ -1,4 +1,6 @@
 import jwt
+from demo_organisation.org.utils import change_owner
+from demo_organisation.users.models import User
 from demo_organisation.org.models import CustomOrganization
 from organizations.models import (
     OrganizationOwner,
@@ -16,6 +18,7 @@ from .serializer import (
     OrganizationUserSerializer,
     OrganizationSerializer,
     InviteSerailizer,
+    UserSerializer,
 )
 from rest_framework.viewsets import ModelViewSet
 from urllib.parse import urlencode, urljoin
@@ -30,19 +33,32 @@ from demo_organisation.org.permission import OrgCreation, IsOwner, IsOwnerOrAdmi
 class OrganisationViewSet(ModelViewSet):
     queryset = CustomOrganization.objects.all()
     serializer_class = OrganizationSerializer
-    # permission_classes = [OrgCreation,]
+    permission_classes = [
+        OrgCreation,
+    ]
+
     def get_serializer_class(self):
         if self.action == "invite":
             return InviteSerailizer
+        if self.action in ["org_users", "org_owner"]:
+            return UserSerializer
         return super().get_serializer_class()
-    
+
     def get_permissions(self):
-        if self.action == "accept":
-            return [AllowAny(),]
-        if self.action in ["destory",]:
-            return [IsOwner,]
-        # if self.action in ["partial_update"]:
-        #     return [IsOwnerOrAdmin,]
+        if self.action in ["accept", "org_users", "org_owner"]:
+            return [
+                AllowAny(),
+            ]
+        if self.action in [
+            "destory",
+        ]:
+            return [
+                IsOwner(),
+            ]
+        if self.action in ["partial_update"]:
+            return [
+                AllowAny(),
+            ]
         return super().get_permissions()
 
     def create(self, request, *args, **kwargs):
@@ -52,13 +68,19 @@ class OrganisationViewSet(ModelViewSet):
 
         parent_id = serializer.validated_data.get("parent")
         if parent_id is not None:
-            parent_owner = OrganizationOwner.objects.filter(organization_id=parent_id).first()
+            parent_owner = OrganizationOwner.objects.filter(
+                organization_id=parent_id
+            ).first()
             if parent_owner:
                 parent_user = parent_owner.organization_user.user
             else:
-                return Response({"details" : "Organization does not exist"})
+                return Response({"details": "Organization does not exist"})
+        else:
+            parent_user = request.user
 
-        org_user = OrganizationUser.objects.filter(user=parent_user, organization=org).first()
+        org_user = OrganizationUser.objects.filter(
+            user=parent_user, organization=org
+        ).first()
         if not org_user:
             org_user = OrganizationUser(user=parent_user, organization=org)
             org_user.save()
@@ -67,32 +89,19 @@ class OrganisationViewSet(ModelViewSet):
         org_owner.save()
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
-    
-    
+
     def partial_update(self, request, *args, **kwargs):
         org = self.get_object()
         with transaction.atomic():
-            serializer = self.serializer_class(data=request.data, instance=org, partial=True)
+            serializer = self.serializer_class(
+                data=request.data, instance=org, partial=True
+            )
             serializer.is_valid(raise_exception=True)
             serializer.save()
             parent_id = serializer.validated_data.get("parent")
-            
+
             if parent_id is not None:
-                parent_owner = OrganizationOwner.objects.filter(organization_id=parent_id).first()
-                if parent_owner:
-                    parent_user = parent_owner.organization_user.user
-                else:
-                    return Response({"details" : "Organization does not exist"})
-
-                org_user = OrganizationUser.objects.filter(user=parent_user, organization=org).first()
-                if not org_user:
-                    org_user = OrganizationUser(user=parent_user, organization=org)
-                    org_user.save()
-
-                OrganizationOwner.objects.filter(organization=org).delete()
-                org_owner = OrganizationOwner(organization_user=org_user, organization=org)
-                org_owner.save()
-                
+                change_owner(parent_id, org)
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -131,6 +140,21 @@ class OrganisationViewSet(ModelViewSet):
 
         return Response("Invited successfully")
 
+    @action(detail=True, methods=["get"], url_path="users")
+    def org_users(self, request, pk=None):
+        org = self.get_object()
+        org_users = OrganizationUser.objects.filter(organization=org).values("user")
+        users = User.objects.filter(id__in=org_users)
+        serializer = self.get_serializer(users, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["get"], url_path="owner")
+    def org_owner(self, request, pk=None):
+        org = self.get_object()
+        org_owner = OrganizationOwner.objects.filter(organization=org).first()
+        serializer = self.get_serializer(org_owner.organization_user.user)
+        return Response(serializer.data)
+
     @extend_schema(
         parameters=[
             OpenApiParameter(name="key", type=str, location="query", required=True),
@@ -149,7 +173,7 @@ class OrganisationViewSet(ModelViewSet):
             try:
                 decoded_key = jwt.decode(key, settings.SECRET_KEY, algorithms=["HS256"])
             except Exception as e:
-                raise Response({"details" : str(e)}, status=status.HTTP_400_BAD_REQUEST)
+                raise Response({"details": str(e)}, status=status.HTTP_400_BAD_REQUEST)
             invite_obj = OrganizationInvitation.objects.filter(
                 id=decoded_key["invite"]
             ).first()
@@ -165,29 +189,37 @@ class OrganisationViewSet(ModelViewSet):
             OrganizationUser.objects.create(
                 user=invite_obj.invitee, organization=invite_obj.organization
             )
-        return Response(
-            {"details": "Invitation accepted successfully!!"}
-        )
-        
+        return Response({"details": "Invitation accepted successfully!!"})
+
+
 class OrganizationUserViewset(ModelViewSet):
     queryset = OrganizationUser.objects.all()
     serializer_class = OrganizationUserSerializer
-    
+
     def get_permissions(self):
         if self.action in ["destory"]:
-            return [IsOwner,]
+            return [
+                IsOwner(),
+            ]
         return super().get_permissions()
-    
+
     def create(self, request, *args, **kwargs):
-        if OrganizationUser.objects.filter(user=request.data.get("user"), organization_id=request.data.get("organization")).exists():
-            return Response({"details" : "User already exists"}, status=status.HTTP_400_BAD_REQUEST)
+        if OrganizationUser.objects.filter(
+            user=request.data.get("user"),
+            organization_id=request.data.get("organization"),
+        ).exists():
+            return Response(
+                {"details": "User already exists"}, status=status.HTTP_400_BAD_REQUEST
+            )
         serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return super().create(request, *args, **kwargs)
-    
-    
+
 
 class OrganizationOwnerViewset(ModelViewSet):
     queryset = OrganizationOwner.objects.all()
     serializer_class = OrganizationOwnerSerializer
+    permission_classes = [
+        IsOwner,
+    ]
